@@ -13,7 +13,7 @@ resolver.streamtape=function(url) {
 						return m1?m1[1].substring(m2?m2.reduce((a,b)=>a+parseInt(b.substring(10)),0):0):"";
 					}).join('');
 			if (u.indexOf("//")===0) u='https:'+u;
-			if (/^https?:\/\/./.test(u)) return {url:u+"&stream=1"};
+			if (/^https?:\/\/./.test(u)) return u+"&stream=1";
 				else throw new Error("Kein Video gefunden!");
 		} else throw new Error("Skript nicht gefunden!");
 	});
@@ -34,14 +34,15 @@ resolver.voe=function(url) {
 			if (s) {
 				const u=(x=>x?atob(x[1]):null)(s.textContent.match(/sources\s*=\s*{([\s\S]*?)}/i)[1].match(/hls["']?\s*:\s*["']([^"']+)/));
 				//if (!u) u=(x=>x?x[1]:null)(s.textContent.match(/sources\s*=\s*{([\s\S]*?)}/i)[1].match(/["'](https?:\/\/.+?)["']/i));
-				if (typeof u==='string' && /^https?:\/\/./.test(u)) return {url:u};
+				if (typeof u==='string' && /^https?:\/\/./.test(u)) return u;
 					else throw new Error("Kein Video gefunden!");
 			} else throw new Error("Source-Skript nicht gefunden!");
 		}
 	});
 };
-		
-resolver.dood=function(url) {
+
+/* Funktioniert nicht wegen Referer
+resolver.doodstream=function(url) {
 	let tokenString="",
 			host="";
 	return fetch(url)
@@ -52,7 +53,7 @@ resolver.dood=function(url) {
 		
 		const r=/dsplayer\.hotkeys[^']+'([^']+).+?function\s*makePlay.+?return[^?]+([^"]+)/,
 					m=(x=>x?x.textContent.match(r):null)([].find.call(doc.querySelectorAll("script:not(:empty)"),x=>r.test(x.textContent)));
-		host=doc.baseURI.match(/https?:\/\/([^\/]+)/); //2do: Wird baseURI  berhaupt richtig gesetzt???
+		host=doc.baseURI.match(/https?:\/\/([^\/]+)/); //2do: Wird baseURI ?berhaupt richtig gesetzt???
 		if (m && host) {
 			tokenString=m[2];
 			return fetch(host[0]+m[1]);
@@ -60,10 +61,11 @@ resolver.dood=function(url) {
 	})
 	.then(x=>x.text())
 	.then(txt=>{
-		if (txt && /^\s*https?:\/\/./.test(txt)) return {url:txt.indexOf("cloudflarestorage.")!==-1?txt.trim():txt+(Math.random()+1).toString(36).substring(2,12)+tokenString+Date.now(),referer:host+"/"}; // 2do referer
+		if (txt && /^\s*https?:\/\/./.test(txt)) return {url:txt.indexOf("cloudflarestorage.")!==-1?txt.trim():txt+(Math.random()+1).toString(36).substring(2,12)+tokenString+Date.now(),referer:url,origin:host}; // 2do referer
 			else throw new Error("Kein Video gefunden!");
 	});
 };
+*/
 								
 resolver.vidoza=function(url) {
 	return fetch(url)
@@ -71,16 +73,45 @@ resolver.vidoza=function(url) {
 	.then(doc=>{
 		const v=doc.querySelector("video source");
 		if (v && /^https?:\/\/./.test(v.src)) {
-			return {url:v.src};
+			return v.src;
 		} else {
 			const S=[].find.call(doc.querySelectorAll("script:not(:empty)"),s=>/window\.pData\s*=/i.test(s.textContent));
 			if (S) {
 				const u=S.textContent.match(/sourcesCode\s*:\s*\[{\s*src\s*:\s*['"](https?:\/\/[^"']+)/i);
-				if (u && /^https?:\/\/./.test(u[1])) return {url:u[1]};
+				if (u && /^https?:\/\/./.test(u[1])) return u[1];
 					else throw new Error("Kein Video gefunden!");
 			} else throw new Error("Source-Skript nicht gefunden!");
 		}
 	});
+};
+
+resolver.filemoon=function(url) {
+	return fetch(url)
+	.then(x=>x.document())
+	.then(doc=>{
+		const packedScript=[].find.call(doc.querySelectorAll("script:not(:empty)"),x=>/p,a,c,k,e,d/i.test(x.textContent));
+		if (packedScript && P_A_C_K_E_R.detect(packedScript.textContent)) {
+			const unpackedScript=P_A_C_K_E_R.unpack(packedScript.textContent),
+						u=unpackedScript.match(/sources:\s*\[\s*\{\s*file:\s*["'](.*?)["']/i);
+			console.log(unpackedScript);
+			if (u && /^https?:\/\/./.test(u[1])) return u[1];
+				else throw new Error("Kein Video gefunden!");
+		} else throw new Error("PACKED-Skript nicht gefunden!");		
+	});
+};
+
+resolver.lulustream=function(url) {
+	return fetch(url)
+	.then(x=>x.document())
+	.then(doc=>{
+		const rg=/sources:\s*\[\s*\{\s*file:\s*["'](.*?)["']/i,
+					s=[].find.call(doc.querySelectorAll("script:not(:empty)"),x=>rg.test(x.textContent));
+		if (s) {
+			const u=s.textContent.match(rg); 
+			if (u && /^https?:\/\/./.test(u[1])) return u[1];
+				else throw new Error("Kein Video gefunden!");
+		} else throw new Error("Source-Skript nicht gefunden!");
+	});	
 };
 
 resolver.s={
@@ -172,3 +203,74 @@ resolver.S={
 	},
 	links:function(url) { return resolver.s.links(url); }
 };
+
+
+var P_A_C_K_E_R = {
+    detect: function(str) {
+        return (P_A_C_K_E_R.get_chunks(str).length > 0);
+    },
+
+    get_chunks: function(str) {
+        var chunks = str.match(/eval\(\(?function\(.*?(,0,\{\}\)\)|split\('\|'\)\)\))($|\n)/g);
+        return chunks ? chunks : [];
+    },
+
+    unpack: function(str) {
+        var chunks = P_A_C_K_E_R.get_chunks(str),
+            chunk;
+        for (var i = 0; i < chunks.length; i++) {
+            chunk = chunks[i].replace(/\n$/, '');
+            str = str.split(chunk).join(P_A_C_K_E_R.unpack_chunk(chunk));
+        }
+        return str;
+    },
+
+    unpack_chunk: function(str) {
+        var unpacked_source = '';
+        var __eval = eval;
+        if (P_A_C_K_E_R.detect(str)) {
+            try {
+                eval = function(s) { // jshint ignore:line
+                    unpacked_source += s;
+                    return unpacked_source;
+                }; // jshint ignore:line
+                __eval(str);
+                if (typeof unpacked_source === 'string' && unpacked_source) {
+                    str = unpacked_source;
+                }
+            } catch (e) {
+                // well, it failed. we'll just return the original, instead of crashing on user.
+            }
+        }
+        eval = __eval; // jshint ignore:line
+        return str;
+    }
+}
+
+function unpack(c) {
+	const depack=function(p) {
+		if(p != "") {
+			c = unescape(p);
+			var _e = eval,
+				s = "eval=function(v){c=v;};" + c +
+				";eval=_e;";
+			eval(s)
+		}
+		else {
+			c = p
+		};
+		return c
+	};
+	var a = 5,	x = 1;
+	while(x < a) {
+		c = unescape(c);
+		if(/eval\(+function\(/.test(c)) {
+			c = depack(c);
+			x++
+		}
+		else {
+			break
+		}
+	};
+	return unescape(c);
+}
